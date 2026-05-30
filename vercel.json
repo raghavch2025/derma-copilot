@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/retention",
+      "schedule": "*/15 * * * *"
+    }
+  ],
+  "functions": {
+    "app/api/webhook/whatsapp/route.ts": {
+      "maxDuration": 15
+    },
+    "app/api/webhook/twilio-status/route.ts": {
+      "maxDuration": 10
+    },
+    "app/api/cron/retention/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/llm/ocr-parse/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/llm/distill/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
