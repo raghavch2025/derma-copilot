@@ -5,6 +5,7 @@ import {
   PRESCRIPTION_OCR_SYSTEM_PROMPT,
   type PrescriptionOCRResult,
 } from '@/lib/llm/schemas/prescription-ocr';
+import { scheduleTimesFor } from '@/lib/efficacy/schedule';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -153,6 +154,18 @@ export async function POST(req: NextRequest) {
       });
 
       for (const m of parsed.prescriptions) {
+        const exactTimes = scheduleTimesFor(
+          m.frequency_per_day,
+          m.food_relation,
+          m.instructions_verbatim
+        );
+        const endsOn =
+          m.duration_days && m.duration_days > 0
+            ? new Date(Date.now() + m.duration_days * 86_400_000)
+                .toISOString()
+                .slice(0, 10)
+            : null;
+
         await supabase.from('medication_timelines').insert({
           clinic_id,
           prescription_id: rx.id,
@@ -164,6 +177,9 @@ export async function POST(req: NextRequest) {
           route: m.route ?? null,
           food_relation: m.food_relation ?? 'irrelevant',
           duration_days: m.duration_days ?? null,
+          exact_times: exactTimes,
+          ends_on: endsOn,
+          is_active: true,
         });
       }
     }

@@ -48,3 +48,5 @@ supabase/.temp/
 # Test coverage
 coverage/
 .nyc_output/
+.vercel
+.env*.local
