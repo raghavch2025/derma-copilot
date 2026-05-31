@@ -7,6 +7,37 @@ export const dynamic = 'force-dynamic';
 
 const MEDIA_BUCKET = 'patient-media';
 
+function buildReply(body: string): string {
+  const lower = body.toLowerCase().trim();
+
+  if (lower.includes('book') || lower.includes('appointment') || lower.includes('consult')) {
+    return `Thank you for reaching out! 📅 To book an appointment, please share:
+1. Your name
+2. Preferred date & time
+3. Your concern (acne, skin check, etc.)
+
+Our team will confirm shortly.`;
+  }
+
+  if (lower.includes('price') || lower.includes('cost') || lower.includes('fees') || lower.includes('charge')) {
+    return `Our consultation fees:\n💊 General Skin Consult: ₹500\n🔬 Acne Treatment Package: ₹2,000\n✨ Skin Rejuvenation Bundle: ₹5,000\n\nReply BOOK to schedule your appointment.`;
+  }
+
+  if (lower.includes('acne') || lower.includes('pimple') || lower.includes('breakout')) {
+    return `We specialize in acne treatment! 🌿\n\nOur dermatologists use a personalized approach combining topical treatments, diet guidance, and follow-up tracking.\n\nReply BOOK to schedule a consultation.`;
+  }
+
+  if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey') || lower.includes('helo')) {
+    return `Hello! 👋 Welcome to Derma Clinic.\n\nHow can we help you today?\n\n1. BOOK — Schedule appointment\n2. PRICE — View our fees\n3. ACNE — Acne treatment info\n\nJust reply with a keyword or describe your concern.`;
+  }
+
+  if (lower.includes('thank')) {
+    return `You're welcome! 😊 Feel free to reach out anytime. We're here to help with all your skin care needs.`;
+  }
+
+  return `Thank you for your message! 🏥 Our team has received it and will respond shortly.\n\nFor faster assistance reply with:\n• BOOK — to schedule an appointment\n• PRICE — to know our fees\n• ACNE — for acne treatment info`;
+}
+
 export async function POST(req: NextRequest) {
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -19,14 +50,11 @@ export async function POST(req: NextRequest) {
   const params: Record<string, string> = {};
   rawForm.forEach((v, k) => { params[k] = String(v); });
 
-  // DEBUG: log all params
   console.log('WEBHOOK PARAMS:', JSON.stringify(params, null, 2));
 
   const proto = req.headers.get('x-forwarded-proto') ?? 'https';
   const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
   const fullUrl = `${proto}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`;
-
-  console.log('FULL URL:', fullUrl);
 
   const signatureValid = validateTwilioSignature({
     authToken,
@@ -43,63 +71,17 @@ export async function POST(req: NextRequest) {
 
   const rawTo = params['To'] ?? '';
   const toNumber = rawTo.replace(/^whatsapp:/i, '').trim();
-
   const rawFrom = params['From'] ?? '';
   const fromNumber = rawFrom.replace(/^whatsapp:/i, '').trim();
 
-  console.log('TO NUMBER:', toNumber);
-  console.log('FROM NUMBER:', fromNumber);
-
-  const { data: clinic, error: clinicErr } = await supabase
+  const { data: clinic } = await supabase
     .from('clinics')
     .select('id')
     .eq('twilio_number', toNumber)
     .single();
 
-  console.log('CLINIC LOOKUP:', JSON.stringify({ clinic, clinicErr }));
-
-  if (clinicErr || !clinic) {
-    // Try with whatsapp: prefix as fallback
-    const { data: clinic2, error: clinic2Err } = await supabase
-      .from('clinics')
-      .select('id')
-      .eq('twilio_number', rawTo)
-      .single();
-
-    console.log('CLINIC LOOKUP FALLBACK:', JSON.stringify({ clinic2, clinic2Err }));
-
-    if (clinic2Err || !clinic2) {
-      return new NextResponse('Unknown destination number', { status: 404 });
-    }
-
-    // Use clinic2 if found
-    const profileName = params['ProfileName'] ?? 'Unknown';
-    const { data: patient } = await supabase
-      .from('patients')
-      .upsert(
-        { clinic_id: clinic2.id, phone_e164: fromNumber, full_name: profileName, consent_whatsapp: true },
-        { onConflict: 'clinic_id,phone_e164', ignoreDuplicates: false }
-      )
-      .select('id')
-      .single();
-
-    await supabase.from('whatsapp_conversations').upsert({
-      clinic_id: clinic2.id,
-      patient_id: patient?.id,
-      twilio_message_sid: params['MessageSid'],
-      direction: 'inbound',
-      status: 'received',
-      from_number: fromNumber,
-      to_number: rawTo,
-      body: params['Body'] ?? null,
-      media_count: parseInt(params['NumMedia'] ?? '0', 10),
-      media_storage_paths: [],
-    }, { onConflict: 'twilio_message_sid' });
-
-    return new NextResponse(
-      '<?xml version="1.0" encoding="UTF-8"?><Response/>',
-      { status: 200, headers: { 'Content-Type': 'text/xml' } }
-    );
+  if (!clinic) {
+    return new NextResponse('Unknown destination number', { status: 404 });
   }
 
   const profileName = params['ProfileName'] ?? 'Unknown';
@@ -156,8 +138,15 @@ export async function POST(req: NextRequest) {
     }).catch(() => {});
   }
 
-  return new NextResponse(
-    '<?xml version="1.0" encoding="UTF-8"?><Response/>',
-    { status: 200, headers: { 'Content-Type': 'text/xml' } }
-  );
+  const replyText = buildReply(params['Body'] ?? '');
+
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message>${replyText}</Message>
+</Response>`;
+
+  return new NextResponse(twiml, {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  });
 }
